@@ -1,19 +1,56 @@
 version: "3.7"
 services:
-  postgres:
-    image: postgres:14
+  transaction:
+    build:
+      context: ./transaction
+      dockerfile: Dockerfile
+    env_file:
+      - ./transaction/.env
+    networks:
+      - transaction-network
+    depends_on:
+      - mongodb
+      - zookeeper
+      - kafka
+      - anti-fraud
     ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - 3060:3060
+  anti-fraud:
+    build:
+      context: ./anti-fraud
+      dockerfile: Dockerfile
+    env_file:
+      - ./anti-fraud/.env
+    networks:
+      - transaction-network
+    depends_on:
+      - zookeeper
+      - kafka
+    ports:
+      - 3000:3000
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - "~/docker-volumes/mongo/data:/bitnami/mongodb"
+    networks:
+      - transaction-network
   zookeeper:
     image: confluentinc/cp-zookeeper:5.5.3
+    networks:
+      - transaction-network
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
   kafka:
-    image: confluentinc/cp-enterprise-kafka:5.5.3
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
     depends_on: [zookeeper]
+    networks:
+      - transaction-network
     environment:
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
@@ -21,5 +58,11 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_JMX_PORT: 9991
+    ulimits:
+      core: -1
     ports:
       - 9092:9092
+    mem_limit: 2g
+networks:
+  transaction-network:
+    driver: bridge
